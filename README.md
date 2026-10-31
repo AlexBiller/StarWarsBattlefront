@@ -3,6 +3,10 @@
 Classic Battleship in the browser: your Rebel Alliance fleet vs. an Imperial AI.
 Plain HTML/CSS/JavaScript with no build step and no dependencies.
 
+**Play it live:** https://alexbiller.github.io/StarWarsBattlefront/
+
+Deployed with GitHub Pages from the `main` branch (repo root). Every push to `main` redeploys automatically.
+
 ## The fleets
 
 | Classic ship | Size | Rebel Alliance (you) | Galactic Empire (AI) |
