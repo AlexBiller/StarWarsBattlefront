@@ -526,6 +526,8 @@
   function hideEndScreens() {
     els.winOverlay.classList.add('hidden');
     els.loseOverlay.classList.add('hidden');
+    clearTimeout(jabbaTimer);
+    jabbaTimer = null;
     if (window.speechSynthesis) window.speechSynthesis.cancel();
   }
 
@@ -539,6 +541,7 @@
     selectedId = null;
     save();
     render();
+    if (soundOn) ctx(); // Play again is a user gesture: the right moment to bring audio back
   }
 
   function bindPlayAgain() {
@@ -547,14 +550,25 @@
 
   /* ---------------- sound ---------------- */
   var audioCtx = null;
+  var jabbaTimer = null;
   function ctx() {
-    if (!audioCtx) {
+    if (!audioCtx || audioCtx.state === 'closed') {
       var AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       audioCtx = new AC();
     }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    wakeAudio();
     return audioCtx;
+  }
+
+  // Safari/iOS move the context to the non-standard 'interrupted' state when speech synthesis
+  // takes over the audio session, so resume on anything other than 'running'.
+  function wakeAudio() {
+    if (!audioCtx || audioCtx.state === 'running' || audioCtx.state === 'closed') return;
+    try {
+      var p = audioCtx.resume();
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) { /* resume needs a user gesture on some browsers; the next gesture retries */ }
   }
 
   function tone(opts) {
@@ -616,7 +630,10 @@
       var laugh = new SpeechSynthesisUtterance('Ho ho ho ho ho!');
       var line = new SpeechSynthesisUtterance('The Force was not with you.');
       [laugh, line].forEach(function (u) { if (voice) u.voice = voice; u.pitch = 0.1; u.rate = 0.75; u.volume = 1; });
-      setTimeout(function () {
+      line.onend = line.onerror = wakeAudio;
+      clearTimeout(jabbaTimer);
+      jabbaTimer = setTimeout(function () {
+        jabbaTimer = null;
         window.speechSynthesis.speak(laugh);
         window.speechSynthesis.speak(line);
       }, 2400);
@@ -668,7 +685,7 @@
     els.soundBtn.addEventListener('click', function () {
       soundOn = !soundOn;
       localStorage.setItem(SOUND_KEY, soundOn ? 'on' : 'off');
-      if (!soundOn && window.speechSynthesis) window.speechSynthesis.cancel();
+      if (!soundOn) { clearTimeout(jabbaTimer); jabbaTimer = null; if (window.speechSynthesis) window.speechSynthesis.cancel(); }
       renderSoundBtn();
     });
     document.addEventListener('keydown', function (e) {
@@ -686,6 +703,8 @@
       scheduleAI();
     });
     if (window.speechSynthesis) window.speechSynthesis.getVoices(); // warm up the voice list
+    // Browsers only let audio resume inside a user gesture, so retry on every click/tap/key.
+    ['pointerdown', 'keydown'].forEach(function (t) { document.addEventListener(t, wakeAudio, true); });
 
     bindPlayAgain();
     renderSoundBtn();
