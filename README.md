@@ -37,7 +37,7 @@ Deployed with GitHub Pages from the `main` branch (repo root). Every push to `ma
 - **Clicking out of turn:** shots are blocked while the AI is taking its turn, before the battle starts, and after it ends.
 - **Refreshing mid-game:** the whole game is saved to `localStorage` after every action (placement, shots, AI memory, battle log). A refresh puts you back exactly where you were, including the AI's turn if you refreshed while it was "thinking". If the saved data is corrupt or was tampered with, the game starts fresh instead of crashing.
 - **Several tabs:** if you open the game in a second tab, the tabs stay in sync through the `storage` event instead of overwriting each other.
-- **Sound** (laser/explosion effects and Jabba's laugh, generated with Web Audio and the browser's speech synthesis) can be turned off with the *Sound* button. If the browser doesn't support these APIs, the game runs silently.
+- **Sound** (blaster "pew" on a miss, "pew" + "bam" on a hit, a bigger "bam" when a ship sinks, and Jabba's laugh, generated with Web Audio and the browser's speech synthesis) can be turned off with the *Sound* button. If the browser doesn't support these APIs, the game runs silently.
 
 ## Running locally
 
