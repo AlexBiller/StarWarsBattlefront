@@ -1,0 +1,11 @@
+{
+  "name": "star-wars-battleship",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Battleship in the browser with Star Wars starships and a hunt/target AI.",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test tests/*.test.js"
+  },
+  "license": "MIT"
+}

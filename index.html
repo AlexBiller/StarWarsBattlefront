@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Star Wars Battleship</title>
+  <meta name="description" content="Battleship with Star Wars starships. Rebel Alliance vs. a hunt/target Imperial AI.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%9A%80</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="stars" aria-hidden="true"></div>
+
+  <header class="top">
+    <h1><span>Star Wars</span> Battleship</h1>
+    <div class="top-actions">
+      <button id="sound-btn" class="ghost" type="button" aria-pressed="true" title="Toggle sound">Sound: On</button>
+      <button id="new-game-btn" class="ghost" type="button">New game</button>
+    </div>
+  </header>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <main class="arena">
+    <section class="side" id="player-side">
+      <h2>Rebel Fleet <small>(you)</small></h2>
+      <div class="board-wrap">
+        <div class="labels cols" aria-hidden="true"></div>
+        <div class="labels rows" aria-hidden="true"></div>
+        <div class="board" id="player-board" aria-label="Your fleet"></div>
+      </div>
+      <ul class="fleet-status" id="player-fleet"></ul>
+    </section>
+
+    <section class="side" id="placement-panel">
+      <h2>Deploy your fleet</h2>
+      <p class="hint">Drag ships onto your grid. Click a placed ship to rotate it. Or click a ship below, then click a cell. Press <kbd>R</kbd> to flip orientation.</p>
+      <div class="dock" id="dock"></div>
+      <div class="placement-actions">
+        <button id="rotate-btn" type="button" class="ghost">Orientation: Horizontal</button>
+        <button id="random-btn" type="button" class="ghost">Random placement</button>
+        <button id="clear-btn" type="button" class="ghost">Clear</button>
+      </div>
+      <button id="start-btn" type="button" class="primary" disabled>Start battle</button>
+    </section>
+
+    <section class="side hidden" id="enemy-side">
+      <h2>Imperial Fleet <small>(AI)</small></h2>
+      <div class="board-wrap">
+        <div class="labels cols" aria-hidden="true"></div>
+        <div class="labels rows" aria-hidden="true"></div>
+        <div class="board enemy" id="enemy-board" aria-label="Enemy waters - click to fire"></div>
+      </div>
+      <ul class="fleet-status" id="enemy-fleet"></ul>
+    </section>
+  </main>
+
+  <section class="log-wrap hidden" id="log-wrap">
+    <h2>Battle log</h2>
+    <ol id="log" class="log"></ol>
+  </section>
+
+  <div id="toast" class="toast" role="alert" aria-live="assertive"></div>
+
+  <div id="win-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="win-title">
+    <div class="modal">
+      <h2 id="win-title">Victory!</h2>
+      <p>The Imperial fleet is destroyed. The Rebellion lives to fight another day.</p>
+      <button type="button" class="primary play-again">Play again</button>
+    </div>
+  </div>
+
+  <div id="lose-overlay" class="overlay jabba-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="lose-title">
+    <div class="jabba-stage">
+      <div class="laugh laugh-1">HO</div>
+      <div class="laugh laugh-2">HO</div>
+      <div class="laugh laugh-3">HO!</div>
+      <svg class="jabba" viewBox="0 0 400 320" role="img" aria-label="Jabba the Hutt laughing">
+        <defs>
+          <radialGradient id="jb-skin" cx="45%" cy="35%" r="70%">
+            <stop offset="0%" stop-color="#c9b97a"/>
+            <stop offset="55%" stop-color="#8f8a4c"/>
+            <stop offset="100%" stop-color="#4f4f26"/>
+          </radialGradient>
+          <radialGradient id="jb-belly" cx="50%" cy="40%" r="60%">
+            <stop offset="0%" stop-color="#e8d9a2"/>
+            <stop offset="100%" stop-color="#a99a5e"/>
+          </radialGradient>
+          <radialGradient id="jb-eye" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ffd25a"/>
+            <stop offset="100%" stop-color="#d9651b"/>
+          </radialGradient>
+        </defs>
+        <g class="jabba-body">
+          <!-- tail -->
+          <path d="M300 250 C 360 250, 395 280, 380 300 C 365 312, 330 300, 300 290 Z" fill="url(#jb-skin)"/>
+          <!-- body -->
+          <ellipse cx="200" cy="230" rx="150" ry="85" fill="url(#jb-skin)"/>
+          <ellipse cx="195" cy="240" rx="95" ry="62" fill="url(#jb-belly)" opacity=".85"/>
+          <path d="M120 230 Q195 250 270 230" stroke="#6d6534" stroke-width="3" fill="none" opacity=".6"/>
+          <path d="M130 262 Q195 280 262 262" stroke="#6d6534" stroke-width="3" fill="none" opacity=".6"/>
+          <!-- arms -->
+          <path class="arm arm-l" d="M90 200 C 60 215, 55 245, 80 250 C 95 252, 100 235, 110 222 Z" fill="url(#jb-skin)"/>
+          <path class="arm arm-r" d="M300 200 C 335 212, 345 245, 320 252 C 305 254, 298 236, 288 222 Z" fill="url(#jb-skin)"/>
+          <!-- head -->
+          <g class="jabba-head">
+            <ellipse cx="200" cy="120" rx="125" ry="88" fill="url(#jb-skin)"/>
+            <!-- chin folds -->
+            <path d="M95 160 Q200 215 305 160" stroke="#5c5a2c" stroke-width="4" fill="none" opacity=".55"/>
+            <path d="M110 178 Q200 225 290 178" stroke="#5c5a2c" stroke-width="3" fill="none" opacity=".45"/>
+            <!-- nostrils -->
+            <ellipse cx="185" cy="100" rx="5" ry="3" fill="#3b3a1c"/>
+            <ellipse cx="215" cy="100" rx="5" ry="3" fill="#3b3a1c"/>
+            <!-- eyes -->
+            <g class="eyes">
+              <ellipse cx="140" cy="78" rx="24" ry="16" fill="#5d5a2c"/>
+              <ellipse cx="260" cy="78" rx="24" ry="16" fill="#5d5a2c"/>
+              <ellipse cx="140" cy="80" rx="18" ry="12" fill="url(#jb-eye)"/>
+              <ellipse cx="260" cy="80" rx="18" ry="12" fill="url(#jb-eye)"/>
+              <rect x="128" y="78" width="24" height="4" rx="2" fill="#1a1205"/>
+              <rect x="248" y="78" width="24" height="4" rx="2" fill="#1a1205"/>
+              <path d="M118 81 Q140 62 162 81 Z" fill="#7d7840"/>
+              <path d="M238 81 Q260 62 282 81 Z" fill="#7d7840"/>
+              <path d="M114 70 Q140 58 166 70" stroke="#4a4822" stroke-width="5" fill="none"/>
+              <path d="M234 70 Q260 58 286 70" stroke="#4a4822" stroke-width="5" fill="none"/>
+            </g>
+            <!-- mouth -->
+            <g class="mouth">
+              <path class="mouth-open" d="M95 128 Q200 118 305 128 Q290 190 200 192 Q110 190 95 128 Z" fill="#3a0f12"/>
+              <path class="tongue" d="M150 172 Q200 150 250 172 Q225 188 200 189 Q175 188 150 172 Z" fill="#b5545c"/>
+              <path d="M95 128 Q200 118 305 128" stroke="#4a4822" stroke-width="6" fill="none" stroke-linecap="round"/>
+            </g>
+          </g>
+        </g>
+      </svg>
+      <h2 id="lose-title" class="force-text">The Force Was Not With You</h2>
+      <p class="lose-sub">Jabba is very amused. Your fleet now belongs to the Hutt Cartel.</p>
+      <button type="button" class="primary play-again">Play again</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
