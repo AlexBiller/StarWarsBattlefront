@@ -141,6 +141,7 @@ kbd { border: 1px solid #667; border-radius: 3px; padding: 0 4px; font-size: 12p
 /* log */
 .log-wrap { max-width: 1200px; margin: 22px auto 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
 .log { margin: 0; padding: 0; list-style: none; max-height: 180px; overflow-y: auto; font-size: 14px; color: #c9d2ea; }
+.log { scrollbar-color: #3a4670 transparent; }
 .log li { padding: 2px 0; }
 .log li:first-child { color: #fff; }
 .log li.sink:first-child { color: var(--gold); }
