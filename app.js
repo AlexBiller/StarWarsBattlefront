@@ -458,7 +458,7 @@
     lastShot = { side: 'enemy', k: k };
     justSunk = null;
     addLog('You fire at ' + coord(r, c) + ': ' + (out.result === 'hit' ? 'HIT!' : 'miss.'));
-    sfx(out.result);
+    sfx(out.sunk ? 'sunk' : out.result);
     if (out.sunk) {
       justSunk = { side: 'enemy', id: out.sunk.id };
       addLog('You destroyed the ' + empireName(out.sunk.id) + '!', 'sink');
@@ -487,7 +487,7 @@
     lastShot = { side: 'player', k: G.key(r, c) };
     justSunk = null;
     addLog('The Empire fires at ' + coord(r, c) + ': ' + (out.result === 'hit' ? 'HIT!' : 'miss.'), 'ai');
-    sfx(out.result);
+    sfx(out.sunk ? 'sunk' : out.result);
     if (out.sunk) {
       justSunk = { side: 'player', id: out.sunk.id };
       addLog('The Empire destroyed your ' + rebelName(out.sunk.id) + '!', 'sink');
@@ -541,7 +541,7 @@
     selectedId = null;
     save();
     render();
-    if (soundOn) ctx(); // Play again is a user gesture: the right moment to bring audio back
+    if (soundOn) onGesture(); // Play again is a user gesture: the right moment to bring audio back
   }
 
   function bindPlayAgain() {
@@ -549,37 +549,83 @@
   }
 
   /* ---------------- sound ---------------- */
+  var AC = window.AudioContext || window.webkitAudioContext;
   var audioCtx = null;
   var jabbaTimer = null;
+  var wakeFailed = false;
+
   function ctx() {
-    if (!audioCtx || audioCtx.state === 'closed') {
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      audioCtx = new AC();
-    }
-    wakeAudio();
+    if (!AC) return null;
+    if (!audioCtx || audioCtx.state === 'closed') newContext();
     return audioCtx;
   }
 
-  // Safari/iOS move the context to the non-standard 'interrupted' state when speech synthesis
-  // takes over the audio session, so resume on anything other than 'running'.
-  function wakeAudio() {
-    if (!audioCtx || audioCtx.state === 'running' || audioCtx.state === 'closed') return;
+  function newContext() {
+    // iOS: Web Audio follows the ring/silent switch unless the page asks for 'playback',
+    // which is why speech could be heard while the blaster sounds were silent.
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
+    if (audioCtx && audioCtx.state !== 'closed') { try { audioCtx.close(); } catch (e) { /* ignore */ } }
+    audioCtx = new AC();
+    wakeFailed = false;
+    // A silent one-sample buffer started inside a gesture unlocks audio on iOS.
     try {
-      var p = audioCtx.resume();
-      if (p && p.catch) p.catch(function () {});
-    } catch (e) { /* resume needs a user gesture on some browsers; the next gesture retries */ }
+      var src = audioCtx.createBufferSource();
+      src.buffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+      src.connect(audioCtx.destination);
+      src.start(0);
+    } catch (e) { /* ignore */ }
   }
 
-  function tone(opts) {
+  // Resolves once the context is running, or after a short timeout if the browser refuses.
+  // Safari/iOS park it in the non-standard 'interrupted' state after speech, a phone call or
+  // backgrounding the tab, so anything other than 'running' gets a resume().
+  function wakeAudio() {
+    var a = audioCtx;
+    if (!a || a.state === 'running' || a.state === 'closed') return Promise.resolve();
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        if (a === audioCtx && a.state !== 'running') wakeFailed = true;
+        resolve();
+      }
+      try {
+        var p = a.resume();
+        if (p && p.then) p.then(finish, finish); else finish();
+      } catch (e) { finish(); }
+      setTimeout(finish, 400);
+    });
+  }
+
+  // Runs on every click/tap/key press, the only moments browsers allow audio to start.
+  function onGesture() {
+    if (!soundOn || !AC) return;
+    // Some iOS versions never resume an interrupted context; a fresh one created in a gesture works.
+    if (!audioCtx || audioCtx.state === 'closed' || (wakeFailed && audioCtx.state !== 'running')) newContext();
+    else wakeAudio();
+  }
+
+  // Plays a sound now if audio is running, otherwise as soon as it resumes (dropped if that takes too long).
+  function withAudio(play) {
+    if (!soundOn) return;
     var a = ctx(); if (!a) return;
+    if (a.state === 'running') { try { play(a); } catch (e) { /* audio is optional */ } return; }
+    var asked = Date.now();
+    wakeAudio().then(function () {
+      if (!soundOn || a !== audioCtx || a.state !== 'running' || Date.now() - asked > 1000) return;
+      try { play(a); } catch (e) { /* audio is optional */ }
+    });
+  }
+
+  function tone(a, opts) {
     var t = a.currentTime + (opts.delay || 0);
     var osc = a.createOscillator(), gain = a.createGain();
     osc.type = opts.type || 'sine';
     osc.frequency.setValueAtTime(opts.from, t);
     osc.frequency.exponentialRampToValueAtTime(Math.max(opts.to, 1), t + opts.dur);
     gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(opts.vol || 0.2, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(opts.vol || 0.2, t + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + opts.dur);
     var node = osc;
     if (opts.lowpass) {
@@ -590,37 +636,49 @@
     osc.start(t); osc.stop(t + opts.dur + 0.05);
   }
 
-  function noise(dur, vol, delay) {
-    var a = ctx(); if (!a) return;
-    var t = a.currentTime + (delay || 0);
-    var buf = a.createBuffer(1, Math.floor(a.sampleRate * dur), a.sampleRate);
+  function noise(a, opts) {
+    var t = a.currentTime + (opts.delay || 0);
+    var buf = a.createBuffer(1, Math.floor(a.sampleRate * opts.dur), a.sampleRate);
     var data = buf.getChannelData(0);
     for (var i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2);
     var src = a.createBufferSource(), gain = a.createGain(), f = a.createBiquadFilter();
-    f.type = 'lowpass'; f.frequency.value = 900;
-    src.buffer = buf; gain.gain.value = vol;
+    f.type = 'lowpass'; f.frequency.value = opts.lowpass || 1000;
+    src.buffer = buf; gain.gain.value = opts.vol;
     src.connect(f); f.connect(gain); gain.connect(a.destination);
     src.start(t);
   }
 
+  // Blaster bolt: two detuned oscillators sweeping down fast give the classic "pew".
+  function pew(a, delay, dur) {
+    tone(a, { from: 2400, to: 160, dur: dur, type: 'sawtooth', vol: 0.14, delay: delay, lowpass: 5000 });
+    tone(a, { from: 1800, to: 120, dur: dur, type: 'square', vol: 0.06, delay: delay + 0.01, lowpass: 3500 });
+  }
+
+  // Impact: noise blast plus a low thump.
+  function bam(a, delay, big) {
+    noise(a, { dur: big ? 1.1 : 0.55, vol: big ? 0.9 : 0.75, lowpass: big ? 900 : 1400, delay: delay });
+    tone(a, { from: 180, to: 38, dur: big ? 0.6 : 0.35, type: 'sine', vol: 0.6, delay: delay });
+    if (big) noise(a, { dur: 1.2, vol: 0.5, lowpass: 350, delay: delay + 0.3 });
+  }
+
   function sfx(kind) {
-    if (!soundOn) return;
-    try {
-      if (kind === 'hit') { tone({ from: 1400, to: 200, dur: 0.18, type: 'sawtooth', vol: 0.08 }); noise(0.5, 0.5, 0.12); }
-      else if (kind === 'miss') { tone({ from: 1400, to: 200, dur: 0.18, type: 'sawtooth', vol: 0.08 }); tone({ from: 300, to: 120, dur: 0.25, vol: 0.08, delay: 0.15 }); }
-      else if (kind === 'start') { tone({ from: 220, to: 440, dur: 0.3, type: 'triangle', vol: 0.12 }); tone({ from: 330, to: 660, dur: 0.35, type: 'triangle', vol: 0.12, delay: 0.25 }); }
-      else if (kind === 'win') { [392, 523, 659, 784].forEach(function (f, i) { tone({ from: f, to: f, dur: 0.35, type: 'triangle', vol: 0.15, delay: i * 0.18 }); }); }
-    } catch (e) { /* audio is optional */ }
+    withAudio(function (a) {
+      if (kind === 'miss') pew(a, 0, 0.26);
+      else if (kind === 'hit') { pew(a, 0, 0.12); bam(a, 0.08, false); }
+      else if (kind === 'sunk') { pew(a, 0, 0.12); bam(a, 0.08, true); }
+      else if (kind === 'start') { tone(a, { from: 220, to: 440, dur: 0.3, type: 'triangle', vol: 0.12 }); tone(a, { from: 330, to: 660, dur: 0.35, type: 'triangle', vol: 0.12, delay: 0.25 }); }
+      else if (kind === 'win') { [392, 523, 659, 784].forEach(function (f, i) { tone(a, { from: f, to: f, dur: 0.35, type: 'triangle', vol: 0.15, delay: i * 0.18 }); }); }
+    });
   }
 
   function jabbaLaugh() {
     if (!soundOn) return;
-    try {
-      // Deep, rumbling "HO HO HO" from filtered sawtooth bursts.
+    // Deep, rumbling "HO HO HO" from filtered sawtooth bursts.
+    withAudio(function (a) {
       for (var i = 0; i < 6; i++) {
-        tone({ from: 120 - i * 4, to: 70, dur: 0.28, type: 'sawtooth', vol: 0.22, delay: 0.4 + i * 0.34, lowpass: 500 });
+        tone(a, { from: 120 - i * 4, to: 70, dur: 0.28, type: 'sawtooth', vol: 0.22, delay: 0.4 + i * 0.34, lowpass: 500 });
       }
-    } catch (e) { /* ignore */ }
+    });
     if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
     try {
       window.speechSynthesis.cancel();
@@ -630,7 +688,7 @@
       var laugh = new SpeechSynthesisUtterance('Ho ho ho ho ho!');
       var line = new SpeechSynthesisUtterance('The Force was not with you.');
       [laugh, line].forEach(function (u) { if (voice) u.voice = voice; u.pitch = 0.1; u.rate = 0.75; u.volume = 1; });
-      line.onend = line.onerror = wakeAudio;
+      line.onend = line.onerror = function () { wakeAudio(); };
       clearTimeout(jabbaTimer);
       jabbaTimer = setTimeout(function () {
         jabbaTimer = null;
@@ -704,7 +762,8 @@
     });
     if (window.speechSynthesis) window.speechSynthesis.getVoices(); // warm up the voice list
     // Browsers only let audio resume inside a user gesture, so retry on every click/tap/key.
-    ['pointerdown', 'keydown'].forEach(function (t) { document.addEventListener(t, wakeAudio, true); });
+    ['pointerdown', 'touchend', 'keydown'].forEach(function (t) { document.addEventListener(t, onGesture, true); });
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) wakeAudio(); });
 
     bindPlayAgain();
     renderSoundBtn();
